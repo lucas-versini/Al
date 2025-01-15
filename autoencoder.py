@@ -37,7 +37,11 @@ class Decoder(nn.Module):
         adj[:,idx[0],idx[1]] = x_
         adj = adj + torch.transpose(adj, 1, 2)
 
-        return adj#, adj_non_binary
+        adj_non_binary = torch.zeros_like(adj)
+        adj_non_binary[:,idx[0],idx[1]] = F.gumbel_softmax(x, tau=1, hard=False)[:,:,0]
+        adj_non_binary = adj_non_binary + torch.transpose(adj_non_binary, 1, 2)
+
+        return adj, adj_non_binary
 
 class GATv2(torch.nn.Module):
     def __init__(self, input_dim, hidden_dim, latent_dim, n_layers, heads=4, dropout=0.2):
@@ -156,7 +160,7 @@ class VariationalAutoEncoder(nn.Module):
         mu = self.fc_mu(x_g)
         logvar = self.fc_logvar(x_g)
         x_g = self.reparameterize(mu, logvar)
-        adj = self.decoder(x_g)
+        adj, _ = self.decoder(x_g)
         return adj
 
     def encode(self, data):
@@ -176,14 +180,14 @@ class VariationalAutoEncoder(nn.Module):
 
     def decode(self, mu, logvar):
        x_g = self.reparameterize(mu, logvar)
-       adj = self.decoder(x_g)
+       adj, _ = self.decoder(x_g)
        return adj
 
     def decode_mu(self, mu):
-       adj = self.decoder(mu)
+       adj, _ = self.decoder(mu)
        return adj
 
-    def loss_function(self, data, current_epoch, schedule = False, beta = 0.05, beta_step = 1e-5):
+    def loss_function(self, data, current_epoch, schedule = False, beta = 0.05, beta_step = 1e-5, non_binary = False):
         x_g  = self.encoder(data)
         mu = self.fc_mu(x_g)
         logvar = self.fc_logvar(x_g)
@@ -199,12 +203,15 @@ class VariationalAutoEncoder(nn.Module):
         sim_stats = F.softmax(sim_stats, dim=-1)
 
         loss_sim = F.kl_div(sim_x_g, sim_stats, reduction = 'sum')
-        adj = self.decoder(x_g)
+        adj, adj_non_binary = self.decoder(x_g)
 
         if schedule:
             beta = min(0.01, current_epoch * beta_step)
-        
-        recon = F.binary_cross_entropy(adj, data.A, reduction = 'sum')
+
+        if non_binary:
+            recon = F.binary_cross_entropy(adj, data.A, reduction = 'sum')
+        else:
+            recon = F.binary_cross_entropy(adj_non_binary, data.A, reduction = 'sum') * 1e-3
         kld = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
         loss = recon + beta*kld + 10 * loss_sim
 
