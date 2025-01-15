@@ -78,7 +78,7 @@ parser.add_argument('--n-layers-decoder', type=int, default=4, help="Number of l
 parser.add_argument('--spectral-emb-dim', type=int, default=10, help="Dimensionality of spectral embeddings for representing graph structures (default: 10)")
 
 # Number of training epochs for the denoising model
-parser.add_argument('--epochs-denoise', type=int, default=300, help="Number of training epochs for the denoising model (default: 100)")
+parser.add_argument('--epochs-denoise', type=int, default=100, help="Number of training epochs for the denoising model (default: 100)")
 
 # Number of timesteps in the diffusion
 parser.add_argument('--timesteps', type=int, default=500, help="Number of timesteps for the diffusion (default: 500)")
