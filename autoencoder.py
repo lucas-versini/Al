@@ -183,7 +183,7 @@ class VariationalAutoEncoder(nn.Module):
        adj = self.decoder(mu)
        return adj
 
-    def loss_function(self, data, beta=0.05):
+    def loss_function(self, data, current_epoch, schedule = False, beta = 0.05, beta_step = 1e-5):
         x_g  = self.encoder(data)
         mu = self.fc_mu(x_g)
         logvar = self.fc_logvar(x_g)
@@ -200,6 +200,9 @@ class VariationalAutoEncoder(nn.Module):
 
         loss_sim = F.kl_div(sim_x_g, sim_stats, reduction = 'sum')
         adj = self.decoder(x_g)
+
+        if schedule:
+            beta = min(0.01, current_epoch * beta_step)
         
         recon = F.binary_cross_entropy(adj, data.A, reduction = 'sum')
         kld = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
