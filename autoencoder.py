@@ -3,13 +3,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 # from torch_geometric.nn import GINConv
-# from torch_geometric.nn import GatedGraphConv
-# from torch_geometric.nn import SAGEConv
 from torch_geometric.nn import EdgeConv
 
-
 CONV = EdgeConv
-
 
 from torch_geometric.nn import global_add_pool
 
@@ -40,18 +36,7 @@ class Decoder(nn.Module):
         adj[:,idx[0],idx[1]] = x_
         adj = adj + torch.transpose(adj, 1, 2)
 
-        # adj_non_binary = torch.zeros_like(adj)
-        # adj_non_binary[:,idx[0],idx[1]] = F.gumbel_softmax(x, tau=1, hard=False)[:,:,0]
-        # adj_non_binary = adj_non_binary + torch.transpose(adj_non_binary, 1, 2)
-        # print(x.shape)
-        # print(F.gumbel_softmax(x, tau=1, hard=False)[:,:,0].shape)
-        # print(adj_non_binary.max())
-        # assert False
-
         return adj#, adj_non_binary
-
-
-
 
 class GIN(torch.nn.Module):
     def __init__(self, input_dim, hidden_dim, latent_dim, n_layers, dropout=0.0):
@@ -65,7 +50,6 @@ class GIN(torch.nn.Module):
                             nn.Linear(hidden_dim, hidden_dim), 
                             nn.LeakyReLU(0.2))
                             ))                        
-        # self.convs.append(CONV(input_dim, hidden_dim))
         for layer in range(n_layers-1):
             self.convs.append(CONV(nn.Sequential(nn.Linear(2 * hidden_dim, hidden_dim),  
                             nn.LeakyReLU(0.2),
@@ -73,7 +57,6 @@ class GIN(torch.nn.Module):
                             nn.Linear(hidden_dim, hidden_dim), 
                             nn.LeakyReLU(0.2))
                             )) 
-            # self.convs.append(CONV(hidden_dim, hidden_dim))
 
         self.bn = nn.BatchNorm1d(hidden_dim)
         self.fc = nn.Linear(hidden_dim, latent_dim)
@@ -142,23 +125,18 @@ class VariationalAutoEncoder(nn.Module):
         logvar = self.fc_logvar(x_g)
         x_g = self.reparameterize(mu, logvar)
 
+        # Some sort of contrastive learning
         sim_x_g = x_g[:, None, :] - x_g[None, :, :]
         sim_x_g = sim_x_g.norm(dim=-1)
-        # sim_x_g = F.gumbel_softmax(sim_x_g, tau=1, hard=True)
         sim_x_g = F.softmax(sim_x_g, dim=-1)
 
         sim_stats = data.stats[:, None, :] - data.stats[None, :, :]
         sim_stats = sim_stats.norm(dim=-1)
-        # sim_stats = F.gumbel_softmax(sim_stats, tau=1, hard=True)
         sim_stats = F.softmax(sim_stats, dim=-1)
 
-        # loss_sim = F.binary_cross_entropy(sim_x_g, sim_stats, reduction = 'sum')
         loss_sim = F.kl_div(sim_x_g, sim_stats, reduction = 'sum')
-        # adj, adj_non_binary = self.decoder(x_g)
         adj = self.decoder(x_g)
         
-        # recon = F.l1_loss(adj, data.A, reduction='mean')
-        # recon = F.binary_cross_entropy(adj, data.A)
         recon = F.binary_cross_entropy(adj, data.A, reduction = 'sum')
         kld = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
         loss = recon + beta*kld + 10 * loss_sim
