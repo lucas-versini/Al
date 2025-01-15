@@ -4,6 +4,7 @@ import torch.nn.functional as F
 
 # from torch_geometric.nn import GINConv
 from torch_geometric.nn import EdgeConv
+from torch_geometric.nn.conv import GATv2Conv
 
 CONV = EdgeConv
 
@@ -37,6 +38,69 @@ class Decoder(nn.Module):
         adj = adj + torch.transpose(adj, 1, 2)
 
         return adj#, adj_non_binary
+
+class GATv2(torch.nn.Module):
+    def __init__(self, input_dim, hidden_dim, latent_dim, n_layers, heads=4, dropout=0.2):
+        super().__init__()
+        self.dropout = dropout
+
+        self.convs = torch.nn.ModuleList()
+        self.convs.append(GATv2Conv(input_dim, hidden_dim, heads=heads, concat=False))
+
+        for layer in range(n_layers - 1):
+            self.convs.append(GATv2Conv(hidden_dim, hidden_dim, heads=heads, concat=False))
+
+        self.bn = nn.BatchNorm1d(hidden_dim)
+        self.fc = nn.Linear(hidden_dim, latent_dim)
+
+    def forward(self, data):
+        edge_index = data.edge_index
+        x = data.x
+
+        for conv in self.convs:
+            x = conv(x, edge_index)
+            x = F.leaky_relu(x, negative_slope=0.1)
+            x = F.dropout(x, self.dropout, training=self.training)
+
+        out = global_add_pool(x, data.batch)
+        out = self.bn(out)
+        out = self.fc(out)
+
+        return out
+
+# Other type of decoder
+class RNNDecoder(nn.Module):
+    def __init__(self, latent_dim, hidden_dim, n_layers, n_nodes, dropout=0.1):
+        super(RNNDecoder, self).__init__()
+        self.n_nodes = n_nodes
+        self.hidden_dim = hidden_dim
+        self.n_layers = n_layers
+
+        self.latent_proj = nn.Linear(latent_dim, hidden_dim)
+
+        self.gru = nn.GRU(input_size=hidden_dim, hidden_size=hidden_dim, num_layers=n_layers, batch_first=True, dropout=dropout)
+
+        self.adj_proj = nn.Linear(hidden_dim, 2 * n_nodes * (n_nodes - 1) // 2)
+
+    def forward(self, x):
+        x = self.latent_proj(x)
+        x = x.unsqueeze(1).repeat(1, self.n_nodes, 1)
+
+        out, _ = self.gru(x)
+
+        out = out.mean(dim=1)
+
+        logits = self.adj_proj(out)
+
+        logits = torch.reshape(logits, (logits.size(0), -1, 2))
+        logits = F.gumbel_softmax(logits, tau=1, hard=True)[:, :, 0]
+
+        adj = torch.zeros(logits.size(0), self.n_nodes, self.n_nodes, device=logits.device)
+        idx = torch.triu_indices(self.n_nodes, self.n_nodes, 1)
+        adj[:, idx[0], idx[1]] = logits
+        adj = adj + adj.transpose(1, 2)
+
+        return adj
 
 class GIN(torch.nn.Module):
     def __init__(self, input_dim, hidden_dim, latent_dim, n_layers, dropout=0.0):
