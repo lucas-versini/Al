@@ -288,7 +288,3 @@ with open("output.csv", "w", newline="") as csvfile:
             edge_list_text = ", ".join([f"({u}, {v})" for u, v in Gs_generated.edges()])           
             # Write the graph ID and the full edge list as a single row
             writer.writerow([graph_id, edge_list_text])
-
-# save the models
-torch.save(autoencoder.state_dict(), 'autoencoder.pth')
-torch.save(denoise_model.state_dict(), 'denoise_model.pth')
