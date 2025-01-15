@@ -144,6 +144,7 @@ if args.train_autoencoder:
             train_loss_all_kld += kld.item()
             cnt_train+=1
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             train_loss_all += loss.item()
             train_count += torch.max(data.batch)+1
             optimizer.step()
@@ -219,6 +220,7 @@ if args.train_denoiser:
             t = torch.randint(0, args.timesteps, (x_g.size(0),), device=device).long()
             loss = p_losses(denoise_model, x_g, t, data.stats, sqrt_alphas_cumprod, sqrt_one_minus_alphas_cumprod, loss_type="l2")
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             train_loss_all += x_g.size(0) * loss.item()
             train_count += x_g.size(0)
             optimizer.step()
